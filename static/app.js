@@ -1,75 +1,27 @@
-let headers=[], records=[];
+let wb=null, ws=null, headers=[], records=[], mode="local", fileHandle=null, fileName="", githubSha=null, githubPath="", githubRepo="", githubBranch="main", dirty=false;
 const $=s=>document.querySelector(s);
-async function api(url, opts={}) {
-  const res=await fetch(url,{headers:{'Content-Type':'application/json'},...opts});
-  const data=await res.json().catch(()=>({}));
-  if(!res.ok) throw new Error(data.error||'Something went wrong');
-  return data;
-}
-function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400)}
-function setSaving(msg){$('#saveState').textContent=msg}
-async function load(){
-  try{
-    const d=await api('/api/data');headers=d.headers;records=d.records;
-    $('#fileName').textContent=d.file;$('#recordCount').textContent=records.length;$('#columnCount').textContent=headers.length;
-    render();
-  }catch(e){toast(e.message)}
-}
-function render(){
-  const q=$('#search').value.trim().toLowerCase();
-  const filtered=records.filter(r=>r.values.some(v=>String(v??'').toLowerCase().includes(q)));
-  $('#resultCount').textContent=`Showing ${filtered.length} of ${records.length} records`;
-  const thead=$('#dataTable thead'),tbody=$('#dataTable tbody');
-  thead.innerHTML='<tr>'+headers.map((h,i)=>`<th><div class="th-inner"><span>${esc(h)}</span><button class="col-menu" title="Column options" data-col="${i+1}">⋯</button></div></th>`).join('')+'<th>Actions</th></tr>';
-  tbody.innerHTML='';
-  if(!filtered.length){tbody.innerHTML=`<tr><td class="empty" colspan="${headers.length+1}">No matching records found.</td></tr>`;return}
-  filtered.forEach(r=>{
-    const tr=document.createElement('tr');
-    r.values.forEach((v,i)=>{
-      const td=document.createElement('td');td.className='editable';td.textContent=v??'';td.title='Double-click to edit';
-      td.addEventListener('dblclick',()=>editCell(td,r._row,i+1,v??''));tr.appendChild(td);
-    });
-    const action=document.createElement('td');action.innerHTML=`<div class="row-actions"><button title="Delete record">⌫</button></div>`;
-    action.querySelector('button').addEventListener('click',async()=>{if(confirm('Delete this record from the Excel file?')){try{await api(`/api/rows/${r._row}`,{method:'DELETE'});await load();toast('Record deleted from Excel')}catch(e){toast(e.message)}}});
-    tr.appendChild(action);tbody.appendChild(tr);
-  });
-  thead.querySelectorAll('.col-menu').forEach(b=>b.addEventListener('click',()=>columnMenu(Number(b.dataset.col))));
-}
-function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function editCell(td,row,col,value){
-  if(td.querySelector('input'))return;
-  const input=document.createElement('input');input.className='cell-input';input.value=value;td.textContent='';td.appendChild(input);input.focus();input.select();
-  let done=false;
-  async function save(){if(done)return;done=true;const next=input.value;if(next===String(value)){td.textContent=value;return}
-    setSaving('Saving to Excel…');
-    try{await api('/api/cells',{method:'PUT',body:JSON.stringify({row,col,value:next})});await load();setSaving('All changes saved');toast('Cell updated in Excel')}
-    catch(e){td.textContent=value;setSaving('Save failed');toast(e.message)}
-  }
-  input.addEventListener('keydown',e=>{if(e.key==='Enter')save();if(e.key==='Escape'){done=true;td.textContent=value}});
-  input.addEventListener('blur',save);
-}
-function openModal(title,fields,callback,buttonLabel='Save'){
-  $('#modalTitle').textContent=title;$('#saveModal').textContent=buttonLabel;
-  $('#modalFields').innerHTML=fields.map((h,i)=>`<div class="field"><label>${esc(h)}</label><input data-index="${i}" placeholder="Enter ${esc(h.toLowerCase())}"></div>`).join('');
-  $('#modal').classList.add('open');
-  const close=()=>$('#modal').classList.remove('open');
-  $('#closeModal').onclick=close;$('#cancelModal').onclick=close;
-  $('#saveModal').onclick=async()=>{const vals=[...$('#modalFields').querySelectorAll('input')].map(x=>x.value);try{await callback(vals);close();await load()}catch(e){toast(e.message)}};
-  $('#modalFields input')?.focus();
-}
-$('#addRecord').onclick=()=>openModal('Add new record',headers,async vals=>{await api('/api/rows',{method:'POST',body:JSON.stringify({values:vals})});toast('New record saved to Excel')},'Add record');
-$('#addColumn').onclick=()=>openModal('Add a column',['New column name'],async vals=>{await api('/api/columns',{method:'POST',body:JSON.stringify({name:vals[0]})});toast('Column added to Excel')},'Add column');
-async function columnMenu(col){
-  const action=prompt(`Column: ${headers[col-1]}\nType R to rename or D to delete:`);
-  if(!action)return;
-  if(action.toLowerCase()==='r'){
-    const name=prompt('Enter the new column name:',headers[col-1]);if(!name)return;
-    try{await api(`/api/columns/${col}`,{method:'PUT',body:JSON.stringify({name})});await load();toast('Column renamed in Excel')}catch(e){toast(e.message)}
-  }else if(action.toLowerCase()==='d'){
-    if(confirm(`Delete column "${headers[col-1]}" and all its cell values?`)){
-      try{await api(`/api/columns/${col}`,{method:'DELETE'});await load();toast('Column deleted from Excel')}catch(e){toast(e.message)}
-    }
-  }
-}
-$('#search').addEventListener('input',render);
-load();
+function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),3000)}
+function status(msg){$("#saveState").textContent=msg}
+function setDirty(v=true){dirty=v;$("#saveBtn").disabled=!dirty;$("#dirtyLabel").textContent=dirty?"Unsaved changes":"No unsaved changes";status(dirty?"Unsaved changes":"All changes saved")}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function aoa(){return XLSX.utils.sheet_to_json(ws,{header:1,defval:"",raw:false})}
+function rebuild(rows){ws=XLSX.utils.aoa_to_sheet(rows);wb.Sheets[$("#sheetSelect").value]=ws;refresh()}
+function refresh(){const rows=aoa();headers=(rows[0]||[]).map((v,i)=>String(v||"Column "+(i+1)));records=rows.slice(1).map((r,i)=>({_row:i+2,values:headers.map((_,j)=>r[j]??"")})).filter(r=>r.values.some(v=>v!==""));$("#recordCount").textContent=records.length;$("#columnCount").textContent=headers.length;$("#fileName").textContent=fileName;$("#sideFile").textContent=fileName;$("#sideSource").textContent=mode==="local"?"Local workbook":"GitHub workbook";$("#sideStatus").textContent=mode==="local"?"● Local file":"● GitHub";$("#workbookTitle").textContent=fileName;$("#workbookDescription").textContent=mode==="local"?"Editing a workbook selected from this device.":"Editing a workbook stored in GitHub.";$("#connectionStatus").textContent=mode==="local"?"Local Excel selected":"GitHub workbook loaded";$("#exportBtn").disabled=false;$("#addRecord").disabled=false;$("#addColumn").disabled=false;$("#search").disabled=false;$("#sheetRow").hidden=false;render()}
+function render(){if(!ws)return;const q=$("#search").value.trim().toLowerCase(), filtered=records.filter(r=>r.values.some(v=>String(v??"").toLowerCase().includes(q)));$("#resultCount").textContent="Showing "+filtered.length+" of "+records.length+" records";const thead=$("#dataTable thead"),tbody=$("#dataTable tbody");thead.innerHTML="<tr>"+headers.map((h,i)=>'<th><div class="th-inner"><span>'+esc(h)+'</span><button class="col-menu" data-col="'+i+'" title="Column options">⋯</button></div></th>').join("")+"<th>Actions</th></tr>";tbody.innerHTML="";if(!filtered.length){tbody.innerHTML='<tr><td class="empty" colspan="'+(headers.length+1)+'">No matching records found.</td></tr>';return}filtered.forEach(r=>{const tr=document.createElement("tr");r.values.forEach((v,i)=>{const td=document.createElement("td");td.className="editable";td.textContent=v;td.title="Double-click to edit";td.addEventListener("dblclick",()=>editCell(td,r._row-2,i,v));tr.appendChild(td)});const act=document.createElement("td"),del=document.createElement("button");del.textContent="⌫";del.title="Delete record";del.onclick=()=>{if(confirm("Delete this record?")){const rows=aoa();rows.splice(r._row-1,1);rebuild(rows);setDirty()}};act.appendChild(del);tr.appendChild(act);tbody.appendChild(tr)});thead.querySelectorAll(".col-menu").forEach(b=>b.onclick=()=>columnMenu(Number(b.dataset.col)))}
+function editCell(td,row,col,value){if(td.querySelector("input"))return;const input=document.createElement("input");input.className="cell-input";input.value=value;td.textContent="";td.appendChild(input);input.focus();input.select();let done=false;const finish=()=>{if(done)return;done=true;const rows=aoa();rows[row+1][col]=input.value;rebuild(rows);setDirty()};input.addEventListener("keydown",e=>{if(e.key==="Enter")finish();if(e.key==="Escape"){done=true;td.textContent=value}});input.addEventListener("blur",finish)}
+function openModal(title,fields,callback,label="Save"){ $("#modalTitle").textContent=title;$("#saveModal").textContent=label;$("#modalFields").innerHTML=fields.map((h,i)=>'<div class="field"><label>'+esc(h)+'</label><input data-index="'+i+'" placeholder="Enter '+esc(h.toLowerCase())+'"></div>').join("");$("#modal").classList.add("open");const close=()=>$("#modal").classList.remove("open");$("#closeModal").onclick=close;$("#cancelModal").onclick=close;$("#saveModal").onclick=()=>{const vals=[...$("#modalFields").querySelectorAll("input")].map(x=>x.value);try{callback(vals);close()}catch(e){toast(e.message)}};$("#modalFields input")?.focus()}
+$("#addRecord").onclick=()=>openModal("Add new record",headers,vals=>{const rows=aoa();rows.push(vals);rebuild(rows);setDirty();toast("Record added") },"Add record");
+$("#addColumn").onclick=()=>openModal("Add column",["New column name"],vals=>{const name=vals[0].trim();if(!name)throw Error("Enter a column name");if(headers.some(h=>h.toLowerCase()===name.toLowerCase()))throw Error("That column already exists");const rows=aoa();rows.forEach((r,i)=>r.push(i===0?name:""));rebuild(rows);setDirty()},"Add column");
+function columnMenu(col){const action=prompt('Column: '+headers[col]+'\nEnter R to rename or D to delete:');if(!action)return;const rows=aoa();if(action.toLowerCase()==="r"){const name=prompt("New column name:",headers[col]);if(!name)return;if(headers.some((h,i)=>i!==col&&h.toLowerCase()===name.toLowerCase()))return toast("That column already exists");rows[0][col]=name}else if(action.toLowerCase()==="d"){if(headers.length<2)return toast("At least one column is required");if(!confirm('Delete "'+headers[col]+'" and its values?'))return;rows.forEach(r=>r.splice(col,1))}else return;rebuild(rows);setDirty()}
+function setWorkbook(book,name){wb=book;fileName=name;const sel=$("#sheetSelect");sel.innerHTML="";wb.SheetNames.forEach(n=>{const o=document.createElement("option");o.value=n;o.textContent=n;sel.appendChild(o)});sel.onchange=()=>{ws=wb.Sheets[sel.value];refresh();setDirty(false)};sel.value=wb.SheetNames[0];ws=wb.Sheets[sel.value];refresh();setDirty(false)}
+$("#browseBtn").onclick=async()=>{try{if(window.showOpenFilePicker){const [handle]=await showOpenFilePicker({multiple:false,types:[{description:"Excel workbook",accept:{"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":[".xlsx"],"application/vnd.ms-excel":[".xls"]}}]});fileHandle=handle;const file=await handle.getFile();setWorkbook(XLSX.read(await file.arrayBuffer(),{type:"array",cellDates:true}),file.name)}else{$("#fileInput").click()}}catch(e){if(e.name!=="AbortError")toast(e.message)}};
+$("#fileInput").onchange=async e=>{const f=e.target.files[0];if(!f)return;fileHandle=null;setWorkbook(XLSX.read(await f.arrayBuffer(),{type:"array",cellDates:true}),f.name);e.target.value=""};
+async function saveLocal(){const out=XLSX.write(wb,{bookType:"xlsx",type:"array"});if(fileHandle&&fileHandle.createWritable){const w=await fileHandle.createWritable();await w.write(out);await w.close();toast("Saved to the selected file")}else{const blob=new Blob([out],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=fileName.replace(/\.(xlsm?|xlsx)$/i,"")+"_updated.xlsx";a.click();URL.revokeObjectURL(url);toast("Updated workbook downloaded")}}
+function toBase64(buf){let s="";const bytes=new Uint8Array(buf);for(let i=0;i<bytes.length;i+=0x8000)s+=String.fromCharCode(...bytes.subarray(i,i+0x8000));return btoa(s)}
+async function githubRequest(url,opts={}){const token=$("#tokenInput").value.trim();const headers={"Accept":"application/vnd.github+json",...(opts.headers||{})};if(token)headers.Authorization="Bearer "+token;const res=await fetch(url,{...opts,headers});const data=await res.json().catch(()=>({}));if(!res.ok)throw Error(data.message||"GitHub request failed ("+res.status+")");return data}
+$("#githubLoadBtn").onclick=async()=>{try{githubRepo=$("#repoInput").value.trim();githubPath=$("#pathInput").value.trim();githubBranch=$("#branchInput").value.trim()||"main";if(!/^[^/]+\/[^/]+$/.test(githubRepo)||!githubPath)throw Error("Enter repository as owner/name and a workbook path");status("Loading from GitHub…");const url="https://api.github.com/repos/"+githubRepo+"/contents/"+githubPath.split("/").map(encodeURIComponent).join("/")+"?ref="+encodeURIComponent(githubBranch);const data=await githubRequest(url);if(data.encoding!=="base64")throw Error("GitHub did not return a base64 workbook");const binary=atob(data.content.replace(/\s/g,"")),bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));githubSha=data.sha;setWorkbook(XLSX.read(bytes,{type:"array",cellDates:true}),githubPath.split("/").pop());mode="github";fileHandle=null;setDirty(false);document.querySelectorAll(".source-tab").forEach(b=>b.classList.toggle("active",b.dataset.mode==="github"));$("#localPanel").hidden=true;$("#githubPanel").hidden=false;toast("GitHub workbook loaded")}catch(e){status("Load failed");toast(e.message)}};
+async function saveGithub(){const token=$("#tokenInput").value.trim();if(!token)throw Error("Enter a GitHub token with Contents read/write permission to save");const out=XLSX.write(wb,{bookType:"xlsx",type:"array"}),url="https://api.github.com/repos/"+githubRepo+"/contents/"+githubPath.split("/").map(encodeURIComponent).join("/");const result=await githubRequest(url,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:"Update workbook using SheetFlow",content:toBase64(out),sha:githubSha,branch:githubBranch})});githubSha=result.content.sha;toast("Workbook committed to GitHub")}
+$("#saveBtn").onclick=async()=>{try{status("Saving…");if(mode==="github")await saveGithub();else await saveLocal();setDirty(false)}catch(e){status("Save failed");toast(e.message)}};
+$("#exportBtn").onclick=()=>{if(!wb)return;const out=XLSX.write(wb,{bookType:"xlsx",type:"array"}),blob=new Blob([out],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=fileName.replace(/\.(xlsm?|xlsx)$/i,"")+"_export.xlsx";a.click();URL.revokeObjectURL(url)};
+document.querySelectorAll(".source-tab").forEach(b=>b.onclick=()=>{const next=b.dataset.mode;document.querySelectorAll(".source-tab").forEach(x=>x.classList.toggle("active",x===b));$("#localPanel").hidden=next!=="local";$("#githubPanel").hidden=next!=="github";mode=next;fileHandle=null;});
+$("#search").addEventListener("input",render);
