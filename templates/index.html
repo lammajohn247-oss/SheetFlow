@@ -2,36 +2,40 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SheetFlow — Excel Manager</title>
+  <meta name="theme-color" content="#17365d"><title>SheetFlow — Excel Manager</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <div class="app-shell">
-  <aside class="sidebar">
-    <div class="brand"><div class="brand-mark">S</div><span>SheetFlow</span></div>
-    <div class="nav-label">WORKSPACE</div>
-    <a class="nav-item active"><span>▦</span> Spreadsheet</a>
-    <div class="sidebar-bottom"><div class="file-mini"> <span class="excel-icon">X</span><div><b>sample_data.xlsx</b><small>Local workbook</small></div></div><div class="local-tag"><i></i> Saved locally</div></div>
-  </aside>
+  <aside class="sidebar"><div class="brand"><div class="brand-mark">S</div><span>SheetFlow</span></div><div class="nav-label">WORKSPACE</div><a class="nav-item active"><span>▦</span> Spreadsheet</a><div class="sidebar-bottom"><div class="file-mini"><span class="excel-icon">X</span><div><b id="sideFile">No workbook</b><small id="sideSource">Choose a data source</small></div></div><div class="local-tag" id="sideStatus">● Not connected</div></div></aside>
   <main class="main">
-    <header class="topbar"><div><div class="eyebrow">WORKSPACE / DATA</div><h1>Spreadsheet manager</h1></div><div class="top-actions"><span class="sync-status"><i></i> Connected to local Excel</span><a class="btn btn-outline" href="/download">↓ Export Excel</a></div></header>
-    <section class="welcome-row"><div><h2>Employee records</h2><p>Manage your workbook directly. Every change is saved to the Excel file.</p></div><button class="btn btn-primary" id="addRecord">＋ Add record</button></section>
-    <section class="stats">
-      <div class="stat-card"><div class="stat-top"><span>Total records</span><span class="stat-icon blue">▤</span></div><strong id="recordCount">—</strong><small>Rows in this worksheet</small></div>
-      <div class="stat-card"><div class="stat-top"><span>Columns</span><span class="stat-icon purple">▥</span></div><strong id="columnCount">—</strong><small>Manage your data fields</small></div>
-      <div class="stat-card"><div class="stat-top"><span>Workbook</span><span class="stat-icon green">✓</span></div><strong class="file-stat">Excel .xlsx</strong><small id="fileName">sample_data.xlsx</small></div>
+    <header class="topbar"><div><div class="eyebrow">WORKSPACE / DATA</div><h1>Spreadsheet manager</h1></div><div class="top-actions"><span class="sync-status" id="connectionStatus">Choose a data source</span><button class="btn btn-outline" id="exportBtn" disabled>↓ Export Excel</button></div></header>
+    <section class="source-panel">
+      <div class="source-heading"><div><h2>Choose data source</h2><p>Work with a workbook on this device or in a GitHub repository.</p></div></div>
+      <div class="source-tabs"><button class="source-tab active" data-mode="local">▣ Local Excel</button><button class="source-tab" data-mode="github">◈ GitHub Excel</button></div>
+      <div id="localPanel" class="source-fields">
+        <button class="btn btn-primary" id="browseBtn">Browse / Select Excel file</button><input id="fileInput" type="file" accept=".xlsx,.xls,.xlsm" hidden>
+        <span class="hint">Choose a workbook from your computer or phone. On supported browsers, SheetFlow can save directly to the selected file; otherwise it downloads an updated copy.</span>
+      </div>
+      <div id="githubPanel" class="source-fields" hidden>
+        <input id="repoInput" placeholder="GitHub repository (owner/repository)" value="lammajohn247-oss/SheetFlow">
+        <input id="pathInput" placeholder="Workbook path in repository" value="sample_data.xlsx">
+        <input id="branchInput" placeholder="Branch" value="main">
+        <input id="tokenInput" type="password" autocomplete="off" placeholder="GitHub token (required to save; kept only in this browser session)">
+        <button class="btn btn-primary" id="githubLoadBtn">Load GitHub workbook</button>
+        <span class="hint">Public repositories can be read without a token. To save changes, create a fine-grained token with Contents: Read and write access to this repository. Do not share your token.</span>
+      </div>
+      <div class="sheet-row" id="sheetRow" hidden><label for="sheetSelect">Worksheet</label><select id="sheetSelect"></select><button class="btn btn-outline" id="saveBtn" disabled>Save changes</button><span id="dirtyLabel" class="hint">No unsaved changes</span></div>
     </section>
-    <section class="table-panel">
-      <div class="table-toolbar"><div><h3>All records</h3><span class="muted" id="resultCount">Loading records…</span></div><div class="toolbar-actions"><div class="searchbox"><span>⌕</span><input id="search" placeholder="Search all columns..." autocomplete="off"></div><button class="btn btn-outline" id="addColumn">＋ Add column</button></div></div>
-      <div class="table-wrap"><table id="dataTable"><thead></thead><tbody></tbody></table></div>
-      <div class="table-footer"><span>Tip: Double-click any cell to edit it. Press Enter to save.</span><span id="saveState">All changes saved</span></div>
-    </section>
-    <footer>SheetFlow <span>•</span> Local Excel database manager</footer>
+    <section class="welcome-row"><div><h2 id="workbookTitle">No workbook selected</h2><p id="workbookDescription">Choose Local Excel or GitHub Excel to get started.</p></div><button class="btn btn-primary" id="addRecord" disabled>＋ Add record</button></section>
+    <section class="stats"><div class="stat-card"><div class="stat-top"><span>Total records</span><span class="stat-icon blue">▤</span></div><strong id="recordCount">—</strong><small>Rows in this worksheet</small></div><div class="stat-card"><div class="stat-top"><span>Columns</span><span class="stat-icon purple">▥</span></div><strong id="columnCount">—</strong><small>Data fields</small></div><div class="stat-card"><div class="stat-top"><span>Workbook</span><span class="stat-icon green">✓</span></div><strong class="file-stat">Excel workbook</strong><small id="fileName">Not selected</small></div></section>
+    <section class="table-panel"><div class="table-toolbar"><div><h3>All records</h3><span class="muted" id="resultCount">No workbook loaded</span></div><div class="toolbar-actions"><div class="searchbox"><span>⌕</span><input id="search" placeholder="Search all columns..." autocomplete="off" disabled></div><button class="btn btn-outline" id="addColumn" disabled>＋ Add column</button></div></div><div class="table-wrap"><table id="dataTable"><thead></thead><tbody><tr><td class="empty">Select a workbook to display records.</td></tr></tbody></table></div><div class="table-footer"><span>Double-click a cell to edit it. Save changes when finished.</span><span id="saveState">Waiting for workbook</span></div></section>
+    <footer>SheetFlow <span>•</span> Excel workbook manager</footer>
   </main>
 </div>
 <div class="toast" id="toast"></div>
 <div class="modal-backdrop" id="modal"><div class="modal"><div class="modal-head"><h3 id="modalTitle">Add record</h3><button class="icon-btn" id="closeModal">×</button></div><div id="modalFields" class="modal-fields"></div><div class="modal-actions"><button class="btn btn-outline" id="cancelModal">Cancel</button><button class="btn btn-primary" id="saveModal">Save record</button></div></div></div>
-<script src="/static/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script><script src="/static/app.js"></script>
 </body></html>
