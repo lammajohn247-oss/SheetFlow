@@ -189,7 +189,12 @@ def delete_column(col):
 def download():
     return send_file(EXCEL_FILE, as_attachment=True, download_name=EXCEL_FILE.name)
 
+# Existing local workbook routes remain available for the Windows desktop build.
+# On Render, the browser-side workbook editor handles selected Local/GitHub files.
+# Render supplies PORT; bind to all interfaces for cloud hosting.
 if __name__ == "__main__":
-    # Open the local web interface automatically when running the packaged app.
-    threading.Timer(1.2, lambda: webbrowser.open("http://127.0.0.1:5000")).start()
-    app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
+    port = int(os.environ.get("PORT", "5000"))
+    host = "0.0.0.0" if os.environ.get("RENDER") else "127.0.0.1"
+    if host == "127.0.0.1":
+        threading.Timer(1.2, lambda: webbrowser.open(f"http://{host}:{port}")).start()
+    app.run(host=host, port=port, debug=False, use_reloader=False)
