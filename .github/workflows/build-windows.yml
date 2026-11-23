@@ -1,0 +1,42 @@
+
+name: Build SheetFlow for Windows
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build standalone app
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onedir --windowed --name SheetFlow `
+            --add-data "templates;templates" `
+            --add-data "static;static" `
+            --add-data "sample_data.xlsx;." `
+            app.py
+
+      - name: Package app folder
+        shell: pwsh
+        run: Compress-Archive -Path dist/SheetFlow -DestinationPath SheetFlow-Windows.zip -Force
+
+      - name: Upload Windows app
+        uses: actions/upload-artifact@v4
+        with:
+          name: SheetFlow-Windows
+          path: SheetFlow-Windows.zip
+          retention-days: 14
